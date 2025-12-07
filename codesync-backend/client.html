@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>CodeSync - Simple Client</title>
+    <style>
+      body {
+        font-family: Inter, Arial, sans-serif;
+        padding: 16px;
+      }
+      textarea {
+        width: 90%;
+        height: 320px;
+        font-family: Menlo, monospace;
+        font-size: 13px;
+      }
+      #info {
+        margin-bottom: 8px;
+      }
+      .small {
+        font-size: 13px;
+        color: #555;
+      }
+      button {
+        margin-left: 8px;
+        padding: 6px 10px;
+      }
+      #suggestionBox {
+        color: #666;
+        font-family: Menlo, monospace;
+        white-space: pre;
+        margin-top: 6px;
+        background: #f8f8f8;
+        padding: 6px;
+        border-radius: 4px;
+        display: none;
+      }
+    </style>
+    <div id="suggestionBox"></div>
+  </head>
+  <body>
+    <h2>CodeSync — Simple WebSocket Client</h2>
+
+    <div id="info">
+      Room: <strong id="roomId">—</strong>
+      <button id="createBtn">Create room</button>
+      <button id="connectBtn">Connect</button>
+      <span class="small" id="status">(not connected)</span>
+    </div>
+
+    <textarea id="editor" placeholder="Type code here..."></textarea>
+
+    <script>
+      const API_BASE = "http://localhost:8000";
+      const editor = document.getElementById("editor");
+      const suggestionBox = document.getElementById("suggestionBox");
+
+      // Adjust if your backend runs on a different host/port
+      let room = null;
+      let ws = null;
+      const roomEl = document.getElementById("roomId");
+      const statusEl = document.getElementById("status");
+      const createBtn = document.getElementById("createBtn");
+      const connectBtn = document.getElementById("connectBtn");
+
+      // debounce timers
+      let typingTimer = null;
+      let autocompleteTimer = null;
+      let applyingRemote = false;
+
+      // create a new room on the backend
+      async function createRoom() {
+        const res = await fetch(API_BASE + "/rooms", { method: "POST" });
+        const j = await res.json();
+        room = j.roomId;
+        roomEl.innerText = room;
+        console.log("Created room:", room);
+      }
+
+      // open WebSocket connection to the room
+      function connectWs() {
+        if (!room) {
+          alert("Create (or enter) a room first.");
+          return;
+        }
+
+        // close existing ws if any
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.close();
+        }
+
+        const wsUrl = `ws://${location.hostname}:8000/ws/${room}`;
+        ws = new WebSocket(wsUrl);
+
+        ws.addEventListener("open", () => {
+          statusEl.innerText = "connected";
+          console.log("ws open", wsUrl);
+        });
+
+        ws.addEventListener("close", (ev) => {
+          statusEl.innerText = "disconnected";
+          console.log("ws closed", ev);
+        });
+
+        ws.addEventListener("message", (ev) => {
+          try {
+            const msg = JSON.parse(ev.data);
+            if (msg.type === "init" && typeof msg.code === "string") {
+              editor.value = msg.code;
+              console.log("init code loaded");
+            } else if (
+              msg.type === "code_update" &&
+              typeof msg.code === "string"
+            ) {
+              // apply remote update — avoid echo feedback
+              applyingRemote = true;
+              editor.value = msg.code;
+              setTimeout(() => (applyingRemote = false), 40);
+              console.log("received remote update");
+            } else {
+              console.log("received message", msg);
+            }
+          } catch (e) {
+            console.warn("invalid message", ev.data);
+          }
+        });
+      }
+
+      // simple debounce to avoid firing too many messages
+      let timer = null;
+      editor.addEventListener("input", () => {
+        if (applyingRemote) return; // skip when we are applying an incoming update
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          if (!ws || ws.readyState !== WebSocket.OPEN) return;
+          const code = editor.value;
+          const payload = { type: "code_update", code };
+          ws.send(JSON.stringify(payload));
+        }, 120); // 120ms debounce
+      });
+
+      // UI handlers
+      createBtn.addEventListener("click", () => createRoom());
+      connectBtn.addEventListener("click", () => connectWs());
+
+      // If URL has ?room=..., use that room automatically (handy for opening two tabs)
+      const q = new URLSearchParams(location.search);
+      if (q.get("room")) {
+        room = q.get("room");
+        roomEl.innerText = room;
+        // auto-connect for convenience
+        connectWs();
+      }
+
+      // helper: call autocomplete endpoint
+      async function fetchAutocomplete(code, cursorPos, language = "python") {
+        try {
+          const res = await fetch(API_BASE + "/autocomplete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code, cursorPosition: cursorPos, language }),
+          });
+          if (!res.ok) return "";
+          const j = await res.json();
+          return j.suggestion || "";
+        } catch (e) {
+          console.warn("autocomplete failed", e);
+          return "";
+        }
+      }
+
+      // small function to get cursor position in textarea
+      function getCursorPos(textarea) {
+        return textarea.selectionStart || 0;
+      }
+
+      // show/hide suggestion
+      function showSuggestion(text) {
+        if (!text) {
+          suggestionBox.style.display = "none";
+          suggestionBox.textContent = "";
+          return;
+        }
+        suggestionBox.style.display = "block";
+        suggestionBox.textContent = text;
+      }
+
+      // accept suggestion with Tab
+      editor.addEventListener("keydown", (ev) => {
+        if (ev.key === "Tab") {
+          // if suggestion visible, insert suggestion and prevent default tab focus
+          if (
+            suggestionBox.style.display !== "none" &&
+            suggestionBox.textContent.trim()
+          ) {
+            ev.preventDefault();
+            const pos = getCursorPos(editor);
+            const before = editor.value.slice(0, pos);
+            const after = editor.value.slice(pos);
+            // append suggestion at cursor
+            editor.value = before + suggestionBox.textContent + after;
+            // move cursor after suggestion
+            const newPos = pos + suggestionBox.textContent.length;
+            editor.setSelectionRange(newPos, newPos);
+            // hide suggestion
+            showSuggestion("");
+            // optionally send a websocket update immediately:
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(
+                JSON.stringify({ type: "code_update", code: editor.value })
+              );
+            }
+          }
+        }
+      });
+
+      // integrate autocomplete into input flow (600ms debounce)
+      editor.addEventListener("input", () => {
+        // existing behavior: send WS updates (120ms) - keep that
+        if (!applyingRemote) {
+          clearTimeout(typingTimer);
+          typingTimer = setTimeout(() => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(
+                JSON.stringify({ type: "code_update", code: editor.value })
+              );
+            }
+          }, 120);
+        }
+
+        // Autocomplete: wait 600ms of idle before calling API
+        clearTimeout(autocompleteTimer);
+        autocompleteTimer = setTimeout(async () => {
+          const code = editor.value;
+          const cursorPos = getCursorPos(editor);
+          // call /autocomplete
+          const suggestion = await fetchAutocomplete(code, cursorPos, "python");
+          // show suggestion only if not empty
+          showSuggestion(suggestion);
+        }, 600);
+      });
+    </script>
+  </body>
+</html>
