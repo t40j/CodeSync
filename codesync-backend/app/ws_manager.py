@@ -48,6 +48,5 @@ class RoomManager:
                 await ws.send_text(message)
             except Exception as e:
                 pass
-        asyncio.create_task(services.set_room_code(room_id, message))
 
 room_manager = RoomManager()
