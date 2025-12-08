@@ -161,6 +161,7 @@ CODESYNC/
     │   ├── app/              # Next.js App Router pages
     │   ├── components/       # Reusable UI components
     │   ├── hooks/            # Custom React hooks
+    │   ├ store/              # Zustand Store
     │   └── lib/              # Utility functions
     ├── .env.local
     ├── next.config.ts
