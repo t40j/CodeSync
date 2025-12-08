@@ -7,13 +7,14 @@ import useAutocomplete from "@/hooks/useAutocomplete";
 import StatusIndicator from "@/components/StatusIndicator";
 import CodeEditor from "@/components/CodeEditor";
 import SuggestionBox from "@/components/SuggestionBox";
+import { useEditorStore } from "@/store/useEditorStore";
 
 type Props = {
   roomId: string;
 };
 
 export default function Editor({ roomId }: Props) {
-  const [code, setCode] = useState("");
+  const { code, setCode, fontSize, increaseFontSize, decreaseFontSize } = useEditorStore();
   const [suggestion, setSuggestion] = useState("");
 
   // remoteUpdate prevents echoing local set to WS
@@ -43,7 +44,7 @@ export default function Editor({ roomId }: Props) {
     return () => {
       unsubs();
     };
-  }, [subscribe]);
+  }, [subscribe, setCode]);
 
   // Debounced WS send
   function sendWS(updated: string) {
@@ -57,7 +58,7 @@ export default function Editor({ roomId }: Props) {
   // handle change from textarea
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const newVal = e.target.value;
-    setCode(newVal);
+    setCode(newVal); // Zustand action
 
     if (!remoteUpdate.current) {
       sendWS(newVal);
@@ -82,7 +83,7 @@ export default function Editor({ roomId }: Props) {
       const after = code.slice(cursor);
 
       const newCode = before + suggestion + after;
-      setCode(newCode);
+      setCode(newCode); // Zustand action
 
       // Move cursor after inserted suggestion
       setTimeout(() => {
@@ -97,8 +98,17 @@ export default function Editor({ roomId }: Props) {
 
   return (
     <div className="flex flex-col h-full relative">
-      {/* Status Bar (Floating) */}
-      <div className="absolute top-4 right-6 z-10">
+      {/* Header / Controls */}
+      <div className="flex justify-between items-center px-6 py-3 border-b border-zinc-800 bg-[#1e1e1e]">
+        <div className="flex items-center gap-4">
+           {/* Font Size Controls (Demonstrating Zustand Actions) */}
+           <div className="flex items-center gap-2 bg-zinc-800 rounded-lg p-1">
+             <button onClick={decreaseFontSize} className="px-2 text-zinc-400 hover:text-white font-bold text-sm">-</button>
+             <span className="text-xs text-zinc-300 w-4 text-center">{fontSize}</span>
+             <button onClick={increaseFontSize} className="px-2 text-zinc-400 hover:text-white font-bold text-sm">+</button>
+           </div>
+        </div>
+
         <StatusIndicator status={status} />
       </div>
 
@@ -106,6 +116,7 @@ export default function Editor({ roomId }: Props) {
         <div className="relative flex-1 rounded-xl overflow-hidden border border-zinc-800 bg-[#1e1e1e] shadow-2xl">
           <CodeEditor
             value={code}
+            fontSize={fontSize} // Pass Zustand state
             onChange={handleChange}
             onKeyDown={handleKeyDown}
             placeholder="# Start typing your Python code here..."
