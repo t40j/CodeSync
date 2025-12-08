@@ -1,6 +1,6 @@
 # CodeSync - Real-time Pair Programming Prototype
 
-A simplified real-time collaborative code editor built with **Python (FastAPI)** and **PostgreSQL**. It features room-based collaboration, WebSocket synchronization, and a mocked AI autocomplete engine.
+A simplified real-time collaborative code editor built with **Next.js**, **Python (FastAPI)**, and **PostgreSQL**. It features room-based collaboration, WebSocket synchronization, and a mocked AI autocomplete engine.
 
 ## 🚀 Features
 * **Real-time Collaboration:** Two users can edit the same document simultaneously (WebSocket).
@@ -21,8 +21,8 @@ A simplified real-time collaborative code editor built with **Python (FastAPI)**
 ### Frontend
 * **Framework:** Next.js (React)
 * **Language:** TypeScript
-* **State Management:** Redux Toolkit
-* **Styling:** CSS Modules / Tailwind (Optional)
+* **State Management:** Zustand
+* **Styling:** Tailwind CSS
 
 ---
 
@@ -32,8 +32,8 @@ A simplified real-time collaborative code editor built with **Python (FastAPI)**
     * We use WebSockets instead of HTTP polling because collaborative editing requires low latency (sub-50ms) to feel natural. Polling would introduce lag and unnecessary server load.
 
 2.  **Sync Strategy (Last-Write-Wins):**
-    * For this prototype, I implemented a "Last-Write-Wins" strategy. The server broadcasts the latest full text state to all clients in the room.
-    * *Why:* It is significantly easier to implement than Operational Transforms (OT) or CRDTs within a short timeframe, and works sufficiently well for a 2-user concurrency limit.
+    * The application uses a "Last-Write-Wins" model, where the server broadcasts the latest state of the code to all connected clients.
+    * *Why:* While production editors use complex algorithms like Operational Transforms, I prioritized a simpler implementation for this prototype. It handles the goal of 2-user collaboration effectively without the massive overhead of building a CRDT system from scratch.
 
 3.  **Database Persistence:**
     * Room state (code) is stored in PostgreSQL.
@@ -52,13 +52,13 @@ Ensure you have PostgreSQL installed.
 1.  Create a database named `application_db`.
 2.  Run the following SQL to create the required table:
 
-```sql
-CREATE TABLE IF NOT EXISTS rooms (
-  room_id TEXT PRIMARY KEY,
-  code TEXT DEFAULT '',
-  created_at TIMESTAMP DEFAULT now()
-);
-```
+    ```sql
+    CREATE TABLE IF NOT EXISTS rooms (
+    room_id TEXT PRIMARY KEY,
+    code TEXT DEFAULT '',
+    created_at TIMESTAMP DEFAULT now()
+    );
+    ```
 ### 2. Backend Setup
 **Prerequisites:** Python 3.11+
 
@@ -67,7 +67,9 @@ CREATE TABLE IF NOT EXISTS rooms (
     cd codesync-backend
     ```
 
-2.  Create and activate a virtual environment:
+2.  **Create and activate a virtual environment:**
+    * *Why?* This isolates the project's dependencies from your global Python installation, preventing version conflicts and keeping your system clean.
+    
     * **Windows:**
         ```bash
         python -m venv .venv
@@ -85,10 +87,9 @@ CREATE TABLE IF NOT EXISTS rooms (
     ```
 
 4.  Configure Environment:
-    Create a `.env` file in the `backend/` folder:
+    Create a `.env` file in the `codesync-backend/` folder:
     ```ini
     DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@localhost:5432/application_db
-    WS_MAX_CLIENTS_PER_ROOM=2
     ```
 5.  Backend Setup (FastAPI)
 
@@ -96,10 +97,21 @@ CREATE TABLE IF NOT EXISTS rooms (
         ```bash
         uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
         ```
+        > **Command Breakdown:**
+        > * `uvicorn`: The high-performance server that runs your Python/FastAPI code.
+        > * `app.main:app`: Tells Uvicorn to look in `app/main.py` for the `app` object.
+        > * `--reload`: Automatically restarts the server when you save code changes (Development only).
+        > * `--host 0.0.0.0`: Makes the server accessible to other devices on your network.
+
 
     2.  Verify the endpoints:
         * **API Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
         * **WebSocket:** `ws://localhost:8000/ws/{room_id}`
+    
+            > **How to test:** > Go to [http://localhost:8000/docs](http://localhost:8000/docs), open the Console (**F12**), and run:
+            > ```javascript
+            > new WebSocket("ws://localhost:8000/ws/test").onopen = () => console.log("Connected!");
+            > ```
 
 ### 3. Frontend Setup (Next.js + TypeScript)
 **Prerequisites:** Node.js 18+
@@ -122,6 +134,8 @@ CREATE TABLE IF NOT EXISTS rooms (
     ```
 
 4.  Open your browser to [http://localhost:3000](http://localhost:3000).
+
+    <img src="codesync-frontend\public\frontendInterfaceScreenshot.jpg" alt="Frontend Interface Screenshot" width="700" />
 
 ## 📂 Project Structure
 
@@ -154,29 +168,29 @@ CODESYNC/
     └── eslint.config.mjs
 ```
 
-## ⚠️ Limitations
+## ⚠️ Current Limitations
 
 * **Concurrency Conflict:**
   Because we use "Last-Write-Wins" with full text replacement, if two users type at the exact same millisecond, one user's keystroke might overwrite the other's.
 
-* **Scalability:**
-  The WebSocketManager stores room state in server memory. This works for one server instance. To scale to multiple servers, we would need a Pub/Sub system (like Redis) to broadcast messages across instances.
+* **Server Scaling:**
+  Room data is currently stored in memory on a single server instance. To run this on a larger scale (like AWS with multiple nodes), we'd need to add a Pub/Sub layer like Redis.
 
 * **Security:**
   There is currently no authentication or room password protection. Anyone with a room ID can join.
 
 ---
 
-## 🚀 Future Improvements (With more time)
+## 🚀 Future Roadmap
 
-* **Operational Transform (OT) or CRDTs:**
-  Replace full-text sync with character-level diffs (CRDTs like Yjs) to handle conflicts gracefully and support more than 2 users.
+* **Smart Conflict Resolution:**
+  The current system uses a simple "overwrite" method. A key improvement would be to implement logic that intelligently merges changes when two users type at the same time, ensuring no work is lost during simultaneous editing.
 
-* **Frontend Polish:**
-  Integrate the Monaco Editor (VS Code editor) fully for syntax highlighting and real cursor position sharing.
+* **Professional Editor Interface:**
+  The plan is to upgrade the simple text area to a full-featured code editor. This would introduce syntax highlighting (coloring), line numbers, and the ability to see exactly where other users are clicking and typing.
 
-* **Redis Layer:**
-  Add Redis for managing WebSocket presence and scaling horizontal instances.
+* **High-Volume Scalability:**
+  While the project works well for small groups, future updates would focus on optimizing the server architecture to handle hundreds of active rooms and users simultaneously without slowing down.
 
-* **Real AI:**
-  Connect the `/autocomplete` endpoint to a real LLM (OpenAI or HuggingFace) for actual code generation.
+* **Dynamic AI Integration:**
+  Currently, the autocomplete provides static, pre-set suggestions. Integrating a live AI service would allow the application to generate, debug, and explain code dynamically based on what the user is actually typing.
