@@ -87,10 +87,11 @@ Ensure you have PostgreSQL installed.
     ```
 
 4.  Configure Environment:
-    Create a `.env` file in the `codesync-backend/` folder:
+    Create a `.env` file in the `codesync-backend/` folder, or copy the `.env.example` file to create your local config:
     ```ini
     DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@localhost:5432/application_db
     ```
+
 5.  Backend Setup (FastAPI)
 
     1.  Run the Server:

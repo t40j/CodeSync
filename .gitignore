@@ -1,9 +1,14 @@
-# Python / FastAPI
-__pycache__/
-*.py[cod]
+# Ignore virtual environment
 .venv/
 venv/
+env/
+
+# Ignore environment variables
 .env
+
+# Ignore compiled python files
+__pycache__/
+*.pyc
 
 # Node / Next.js
 node_modules/
